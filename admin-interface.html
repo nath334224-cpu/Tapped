@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Interface - Real Ale Finder</title>
+
+  <!-- Firebase compat scripts -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+  <style>
+    body { font-family: Arial, sans-serif; background:#f3f3f3; padding:20px; }
+    h1 { text-align:center; color:#d55c16; }
+    .form-box { background:white; padding:20px; border-radius:10px; max-width:400px; margin:20px auto; box-shadow:0 4px 10px rgba(0,0,0,0.1); }
+    label { display:block; margin-top:10px; font-weight:bold; }
+    input { width:100%; padding:8px; margin-top:5px; border:1px solid #ccc; border-radius:6px; }
+    button { margin-top:15px; width:100%; padding:10px; background:#d55c16; color:white; border:none; border-radius:8px; cursor:pointer; }
+    button:hover { opacity:0.9; }
+    .pub-list { max-width:600px; margin:20px auto; }
+    .pub-card { background:white; padding:15px; margin-bottom:10px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.1); }
+    .pub-card h3 { margin:0 0 5px 0; }
+  </style>
+</head>
+<body>
+
+<h1>Admin Interface - Manage Pubs</h1>
+
+<div class="form-box">
+  <h2>Add New Pub</h2>
+
+  <!-- ⭐ Free Google Maps Extractor -->
+  <label>Google Maps Link (optional)</label>
+  <input id="pubMapsLink" type="text" placeholder="Paste a Google Maps URL">
+  <button onclick="extractFromMapsLink()">Extract From Link</button>
+
+  <label>Pub Name</label>
+  <input id="pubName" type="text">
+
+  <label>Location (City & Postcode)</label>
+  <input id="pubLocation" type="text">
+
+  <label>Coordinates (lat,lng)</label>
+  <input id="pubCoords" type="text" placeholder="50.9988,-2.9838">
+
+  <label>Now Tapping Ale</label>
+  <input id="pubAle" type="text">
+
+  <button onclick="addPub()">Add Pub</button>
+</div>
+
+<div class="pub-list" id="pubList">
+  <h2>Existing Pubs</h2>
+</div>
+
+<script>
+  // Firebase config
+  const firebaseConfig = {
+    apiKey: "AIzaSyBU9vNgsgqN7zKvrSHIE87EkD37vVFwqWE",
+    authDomain: "tapped-ale.firebaseapp.com",
+    projectId: "tapped-ale",
+    storageBucket: "tapped-ale.appspot.com",
+    messagingSenderId: "836659581440",
+    appId: "1:836659581440"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+
+  // Only allow admin access
+  auth.onAuthStateChanged(async (user) => {
+    if (!user) {
+      window.location.href = "signin.html";
+      return;
+    }
+    const doc = await db.collection('users').doc(user.uid).get();
+    const role = doc.exists ? doc.data().role : 'user';
+    if (role !== 'admin') {
+      alert("Access denied. Admins only.");
+      window.location.href = "index.html";
+    } else {
+      loadPubs();
+    }
+  });
+
+  // ⭐ Free Google Maps URL extractor
+  function extractFromMapsLink() {
+    const link = document.getElementById("pubMapsLink").value.trim();
+    if (!link) {
+      alert("Paste a Google Maps link first");
+      return;
+    }
+
+    let pubName = "";
+    let lat = "";
+    let lng = "";
+    let address = "";
+    let postcode = "";
+
+    try {
+      // Extract name
+      const nameMatch = link.match(/\/place\/([^\/]+)/);
+      if (nameMatch) {
+        pubName = decodeURIComponent(nameMatch[1].replace(/\+/g, " "));
+      }
+
+      // Extract latitude/longitude
+      const coordsMatch = link.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+      if (coordsMatch) {
+        lat = coordsMatch[1];
+        lng = coordsMatch[2];
+      }
+
+      // Extract address if present
+      const addressMatch = link.match(/place\/[^\/]+\/([^@]+)/);
+      if (addressMatch) {
+        address = decodeURIComponent(addressMatch[1].replace(/\+/g, " "));
+      }
+
+      // Extract UK postcode
+      const postcodeMatch = link.match(/[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}/i);
+      if (postcodeMatch) {
+        postcode = postcodeMatch[0].toUpperCase();
+      }
+
+      // Fill form
+      if (pubName) document.getElementById("pubName").value = pubName;
+      if (address) document.getElementById("pubLocation").value = address;
+      if (postcode) document.getElementById("pubLocation").value += " " + postcode;
+      if (lat && lng) document.getElementById("pubCoords").value = `${lat},${lng}`;
+
+      alert("Details extracted! Review and click Add Pub.");
+    } catch (err) {
+      console.error(err);
+      alert("Could not extract info from the link");
+    }
+  }
+
+  // Add new pub
+  async function addPub() {
+    const name = document.getElementById("pubName").value.trim();
+    const location = document.getElementById("pubLocation").value.trim();
+    const coords = document.getElementById("pubCoords").value.trim();
+    const ale = document.getElementById("pubAle").value.trim();
+
+    if (!name || !location || !coords || !ale) {
+      alert("Fill all fields");
+      return;
+    }
+
+    const [lat, lng] = coords.split(",").map(Number);
+    if (isNaN(lat) || isNaN(lng)) {
+      alert("Invalid coordinate format. Use: 50.9988,-2.9838");
+      return;
+    }
+
+    try {
+      await db.collection("pubs").add({
+        name,
+        location,
+        ale,
+        lat,
+        lng
+      });
+
+      alert(`Pub "${name}" added!`);
+
+      document.getElementById("pubName").value = "";
+      document.getElementById("pubLocation").value = "";
+      document.getElementById("pubCoords").value = "";
+      document.getElementById("pubAle").value = "";
+      document.getElementById("pubMapsLink").value = "";
+
+      loadPubs();
+
+    } catch (error) {
+      alert(error.message);
+    }
+  }
+
+  // Load existing pubs
+async function loadPubs() {
+  const pubList = document.getElementById("pubList");
+  pubList.innerHTML = "<h2>Existing Pubs</h2>";
+
+  const snapshot = await db.collection("pubs").get();
+
+  snapshot.forEach(doc => {
+    const data = doc.data();
+    const pubId = doc.id;
+
+    const div = document.createElement("div");
+    div.className = "pub-card";
+
+    div.innerHTML = `
+      <h3>${data.name}</h3>
+      <p>${data.location}</p>
+      <p><strong>Now Tapping:</strong> ${data.ale}</p>
+      <p>Lat: ${data.lat} | Lng: ${data.lng}</p>
+
+      <button onclick="editPub('${pubId}', '${data.name}', '${data.location}', '${data.ale}', ${data.lat}, ${data.lng})">Edit</button>
+      <button onclick="deletePub('${pubId}')"
+              style="background:#b30000; margin-top:5px;">Delete</button>
+    `;
+
+    pubList.appendChild(div);
+  });
+}
+
+async function deletePub(id) {
+  const confirmDelete = confirm("Delete this pub?");
+  if (!confirmDelete) return;
+
+  await db.collection("pubs").doc(id).delete();
+  alert("Pub deleted.");
+  loadPubs();
+}
+
+function editPub(id, name, location, ale, lat, lng) {
+  const newName = prompt("Pub Name:", name);
+  if (newName === null) return;
+
+  const newLocation = prompt("Location:", location);
+  if (newLocation === null) return;
+
+  const newAle = prompt("Now Tapping Ale:", ale);
+  if (newAle === null) return;
+
+  const newLat = parseFloat(prompt("Latitude:", lat));
+  if (isNaN(newLat)) return alert("Invalid latitude");
+
+  const newLng = parseFloat(prompt("Longitude:", lng));
+  if (isNaN(newLng)) return alert("Invalid longitude");
+
+  db.collection("pubs").doc(id).update({
+    name: newName,
+    location: newLocation,
+    ale: newAle,
+    lat: newLat,
+    lng: newLng
+  }).then(() => {
+    alert("Pub updated!");
+    loadPubs();
+  });
+}
+
+</script>
+
+</body>
+</html>

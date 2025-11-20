@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pub Details</title>
+
+    <!-- Firebase Compat -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+    <link rel="stylesheet" href="style.css" />
+    <style>
+        body { font-family: Arial, sans-serif; background:#fafafa; margin:0; padding:20px; }
+        .container { max-width:800px; margin:auto; background:white; padding:20px; border-radius:12px; box-shadow:0 3px 10px rgba(0,0,0,0.15); }
+        .pub-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+        .pub-name { font-size:2rem; font-weight:bold; }
+        .pub-location { color:#666; font-size:1.1rem; }
+        .section-title { margin-top:25px; font-size:1.4rem; font-weight:bold; border-bottom:2px solid #d55c16; display:inline-block; padding-bottom:4px; }
+        .beer-list li { margin:6px 0; }
+        .back-btn { background:#d55c16; color:white; padding:10px 16px; border:none; border-radius:8px; cursor:pointer; font-size:1rem; }
+        .info-box { margin-top:10px; line-height:1.6; }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <button class="back-btn" onclick="history.back()">← Back</button>
+
+        <div class="pub-header">
+            <div>
+                <div class="pub-name" id="pubName">Loading...</div>
+                <div class="pub-location" id="pubLocation"></div>
+            </div>
+        </div>
+
+        <div class="section-title">Current Beers</div>
+        <ul id="beerList" class="beer-list"></ul>
+
+        <div class="section-title">Contact</div>
+        <div class="info-box">
+            <div><strong>Phone:</strong> <span id="pubPhone"></span></div>
+        </div>
+
+        <div class="section-title">Opening Times</div>
+        <div class="info-box" id="pubHours"></div>
+    </div>
+
+    <script>
+        // Firebase config
+        const firebaseConfig = {
+            apiKey: "AIzaSyBU9vNgsgqN7zKvrSHIE87EkD37vVFwqWE",
+            authDomain: "tapped-ale.firebaseapp.com",
+            projectId: "tapped-ale",
+            storageBucket: "tapped-ale.appspot.com",
+            messagingSenderId: "836659581440",
+            appId: "1:836659581440"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // Get Pub ID from URL
+        const params = new URLSearchParams(window.location.search);
+        const pubId = params.get("id");
+
+        async function loadPub() {
+            if (!pubId) return;
+            const doc = await db.collection("pubs").doc(pubId).get();
+            if (!doc.exists) return;
+
+            const data = doc.data();
+
+            document.getElementById("pubName").textContent = data.name;
+            document.getElementById("pubLocation").textContent = data.location;
+
+            // Beers
+            const beers = document.getElementById("beerList");
+            if (Array.isArray(data.beers)) {
+                data.beers.forEach(b => {
+                    const li = document.createElement("li");
+                    li.textContent = b;
+                    beers.appendChild(li);
+                });
+            } else {
+                beers.innerHTML = "<li>No beers listed</li>";
+            }
+
+            // Phone
+            document.getElementById("pubPhone").textContent = data.phone || "Not available";
+
+            // Opening hours
+            const pubHours = document.getElementById("pubHours");
+            if (data.openingTimes) {
+                pubHours.innerHTML = data.openingTimes.replace(/\n/g, "<br>");
+            } else {
+                pubHours.textContent = "Not provided";
+            }
+        }
+
+        loadPub();
+    </script>
+</body>
+</html>

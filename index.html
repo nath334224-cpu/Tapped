@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Firebase compat scripts -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real Ale Finder</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+    <style>
+        body { font-family: Arial, sans-serif; background:#f3f3f3; margin:0; }
+        .pub-list-section { display:flex; flex-wrap:wrap; gap:12px; padding:12px; }
+        .pub-card { display:flex; flex-direction:column; width:200px; background:white; border-radius:10px; box-shadow:0 3px 8px rgba(0,0,0,0.15); overflow:hidden; }
+        .pub-image { width:100%; height:120px; object-fit:cover; }
+        .pub-info { padding:10px; }
+        .map-section { height:400px; display:block; margin:12px 0; }
+        .active { background:#d55c16; color:white; }
+    </style>
+</head>
+
+<body>
+
+<!-- navigation bar -->
+<nav class="navbar">
+    <div class="nav-left">
+        <img src="images/beer-logo.png" class="logo">
+        <span class="brand">Real Ale Finder</span>
+        <span class="tagline">Find fresh barrels of Ale near you</span>
+    </div>
+
+    <div class="nav-right">
+        <a class="nav-link">Browse Pubs</a>
+        <a href="signin.html" class="signin-btn">Sign In / Sign Up</a>
+    </div>
+</nav>
+
+<div class="page-background">
+
+    <header class="header-section">
+        <div class="title-box">
+            <h1 class="page-title">Notifications: latest tapped barrels near you</h1>
+            <p class="page-subtitle">See new updates from your favourite pubs</p>
+        </div>
+    </header>
+
+    <section class="search-section">
+        <div class="search-container">
+            <div class="search-row">
+                <div class="search-input-box">
+                    <img src="images/search-icon.gif" class="search-icon">
+                    <input type="text" placeholder="Search by pub name, city, or location...">
+                </div>
+
+                <button class="search-btn near-me-btn">Near Me</button>
+                <button class="search-btn">Favourites Only</button>
+            </div>
+
+            <div class="slider-row">
+                <label for="radiusRange">
+                    Search Radius: <span id="radiusValue">10</span> miles
+                </label>
+                <input type="range" id="radiusRange" min="1" max="50" value="10">
+            </div>
+
+            <div class="search-bottom">
+                <span class="results-text">0 pubs found</span>
+                <div class="view-buttons">
+                    <button class="list-btn active">List</button>
+                    <button class="map-btn">Map</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="map-section">
+        <div id="pubMap"></div>
+    </section>
+
+    <section class="pub-list-section"></section>
+
+</div>
+
+<script>
+    // Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyBU9vNgsgqN7zKvrSHIE87EkD37vVFwqWE",
+      authDomain: "tapped-ale.firebaseapp.com",
+      projectId: "tapped-ale",
+      storageBucket: "tapped-ale.appspot.com",
+      messagingSenderId: "836659581440",
+      appId: "1:836659581440"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // Custom user icon
+const userIcon = L.icon({
+    iconUrl: 'images/user-icon.png',
+    iconSize: [40, 40],
+    iconAnchor: [20, 40],
+    popupAnchor: [0, -40]
+});
+
+    // Map
+    const map = L.map('pubMap').setView([50.998814, -2.983894], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
+    // Elements
+    const pubListSection = document.querySelector(".pub-list-section");
+    const resultsText = document.querySelector(".results-text");
+    const searchInput = document.querySelector(".search-input-box input");
+    const mapSection = document.querySelector(".map-section");
+    const mapButton = document.querySelector(".map-btn");
+    const listButton = document.querySelector(".list-btn");
+    const nearMeBtn = document.querySelector(".near-me-btn");
+    const radiusSlider = document.getElementById("radiusRange");
+    const radiusValue = document.getElementById("radiusValue");
+
+    let userMarker, userCircle;
+    const markers = []; // array of {marker, card, coords, name, location}
+
+// Create pub card element
+function createPubCard(pub) {
+    const div = document.createElement("div");
+    div.className = "pub-row";
+    div.dataset.coords = `${pub.lat},${pub.lng}`;
+
+    // Make the row clickable → go to pub details page
+    div.addEventListener("click", () => {
+        window.location.href = `pub.html?id=${pub.id}`;
+    });
+
+    div.innerHTML = `
+        <div class="pub-row-left">
+            <span class="pub-name">${pub.name}</span>
+            <span class="pub-location">(${pub.location})</span>
+        </div>
+
+        <div class="pub-row-right">
+            <span class="pub-ale">${pub.ale}</span>
+        </div>
+    `;
+
+    return div;
+}
+
+    // Load pubs from Firestore
+    async function loadPubs() {
+        pubListSection.innerHTML = "";
+        markers.length = 0;
+
+        const snapshot = await db.collection('pubs').get();
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const card = createPubCard({
+                name: data.name,
+                location: data.location,
+                ale: data.ale,
+                lat: data.lat,
+                lng: data.lng
+            });
+            pubListSection.appendChild(card);
+
+            const marker = L.marker([data.lat, data.lng])
+                .bindPopup(`<strong>${data.name}</strong><br>${data.location}<br><em>${data.ale}</em>`)
+                .addTo(map);
+
+            markers.push({
+                marker,
+                card,
+                coords: [data.lat, data.lng],
+                name: data.name.toLowerCase(),
+                location: data.location.toLowerCase()
+            });
+        });
+
+        resultsText.textContent = `${markers.length} pub${markers.length !== 1 ? 's' : ''} found`;
+    }
+
+    // Map/List toggle
+    function showMap(){
+        mapSection.style.display = "block";
+        pubListSection.style.display = "none";
+        mapButton.classList.add("active");
+        listButton.classList.remove("active");
+        map.invalidateSize();
+    }
+    function showList(){
+        pubListSection.style.display = "flex";
+        mapSection.style.display = "none";
+        listButton.classList.add("active");
+        mapButton.classList.remove("active");
+    }
+    mapButton.addEventListener("click", showMap);
+    listButton.addEventListener("click", showList);
+
+    // Search filtering
+    function filterPubs(){
+        const query = searchInput.value.toLowerCase().trim();
+        let count = 0;
+        markers.forEach(item=>{
+            if(item.name.includes(query) || item.location.includes(query)){
+                item.card.style.display = "flex";
+                item.marker.addTo(map);
+                count++;
+            } else {
+                item.card.style.display = "none";
+                map.removeLayer(item.marker);
+            }
+        });
+        resultsText.textContent = count ? `${count} pub${count!==1?'s':''} found` : "No pubs found";
+    }
+    searchInput.addEventListener("input", filterPubs);
+
+    // Radius slider
+    radiusSlider.addEventListener("input", ()=>{
+        radiusValue.textContent = radiusSlider.value;
+        if(userCircle && userMarker){
+            const radiusMeters = parseFloat(radiusSlider.value)*1609.34;
+            userCircle.setRadius(radiusMeters);
+
+            const userLatLng = userMarker.getLatLng();
+            let count = 0;
+            markers.forEach(item=>{
+                const dist = map.distance(userLatLng, item.coords);
+                if(dist <= radiusMeters){
+                    item.card.style.display = "flex";
+                    item.marker.addTo(map);
+                    count++;
+                } else {
+                    item.card.style.display = "none";
+                    map.removeLayer(item.marker);
+                }
+            });
+            resultsText.textContent = count ? `${count} pub${count!==1?'s':''} found` : "No pubs found";
+            map.fitBounds(userCircle.getBounds(), {padding:[50,50]});
+        }
+    });
+
+    // "Near Me" button
+    nearMeBtn.addEventListener("click", ()=>{
+        if(navigator.geolocation){
+            navigator.geolocation.getCurrentPosition(pos=>{
+                const userLat = pos.coords.latitude;
+                const userLng = pos.coords.longitude;
+                const radiusMeters = parseFloat(radiusSlider.value)*1609.34;
+
+                if(userMarker) map.removeLayer(userMarker);
+                if(userCircle) map.removeLayer(userCircle);
+
+                userMarker = L.marker([userLat, userLng], { icon: userIcon })
+                             .addTo(map)
+                            .bindPopup("You are here")
+                            .openPopup();
+
+                userCircle = L.circle([userLat,userLng],{radius:radiusMeters,color:'#d55c16',fillColor:'#d55c16',fillOpacity:0.1}).addTo(map);
+
+                let count=0;
+                markers.forEach(item=>{
+                    const dist = map.distance([userLat,userLng], item.coords);
+                    if(dist <= radiusMeters){
+                        item.card.style.display = "flex";
+                        item.marker.addTo(map);
+                        count++;
+                    } else {
+                        item.card.style.display = "none";
+                        map.removeLayer(item.marker);
+                    }
+                });
+                resultsText.textContent = count ? `${count} pub${count!==1?'s':''} found` : "No pubs found";
+                map.fitBounds(userCircle.getBounds(), {padding:[50,50]});
+            }, ()=>{alert("Could not get your location");});
+        } else { alert("Geolocation not supported"); }
+    });
+
+    loadPubs();
+</script>
+
+</body>
+</html>
