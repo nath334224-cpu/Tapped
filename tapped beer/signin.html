@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign In / Sign Up</title>
+
+  <!-- Firebase compat scripts -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+  <style>
+    body { font-family: Arial, sans-serif; background:#f3f3f3; display:flex; justify-content:center; align-items:center; height:100vh; }
+    .box { background:white; width:360px; padding:30px; border-radius:14px; box-shadow:0 4px 16px rgba(0,0,0,0.15); }
+    h2 { text-align:center; margin-bottom:20px; }
+    label { font-weight:bold; }
+    input { width:100%; padding:10px; margin:8px 0 18px; border:1px solid #ccc; border-radius:6px; }
+    button { width:100%; padding:12px; background:#d55c16; border:none; border-radius:8px; color:white; cursor:pointer; }
+    button:hover { opacity:0.9; }
+    .toggle { text-align:center; margin-top:16px; cursor:pointer; color:#d55c16; font-weight:bold; }
+  </style>
+</head>
+<body>
+
+  <!-- SIGN IN -->
+  <div class="box" id="signinBox">
+    <h2 id="signinTitle">Sign In</h2>
+    <label>Email</label>
+    <input id="email" type="email" />
+    <label>Password</label>
+    <input id="password" type="password" />
+    <button onclick="login()">Sign In</button>
+    <div class="toggle" onclick="toggleSignup(true)">Create an Account</div>
+  </div>
+
+  <!-- SIGN UP -->
+  <div class="box" id="signupBox" style="display:none;">
+    <h2>Create Account</h2>
+    <label>Email</label>
+    <input id="signupEmail" type="email" />
+    <label>Password</label>
+    <input id="signupPassword" type="password" />
+    <label>Confirm Password</label>
+    <input id="signupConfirm" type="password" />
+    <button onclick="signup()">Sign Up</button>
+    <div class="toggle" onclick="toggleSignup(false)">Back to Sign In</div>
+  </div>
+
+<script>
+  // Initialize Firebase using compat API
+  const firebaseConfig = {
+    apiKey: "AIzaSyBU9vNgsgqN7zKvrSHIE87EkD37vVFwqWE",
+    authDomain: "tapped-ale.firebaseapp.com",
+    projectId: "tapped-ale",
+    storageBucket: "tapped-ale.appspot.com",
+    messagingSenderId: "836659581440",
+    appId: "1:836659581440"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+
+  function toggleSignup(show) {
+    document.getElementById("signinBox").style.display = show ? "none" : "block";
+    document.getElementById("signupBox").style.display = show ? "block" : "none";
+  }
+
+  async function signup() {
+    const email = document.getElementById("signupEmail").value;
+    const password = document.getElementById("signupPassword").value;
+    const confirm = document.getElementById("signupConfirm").value;
+
+    if (!email || !password || !confirm) { alert("Fill all fields"); return; }
+    if (password !== confirm) { alert("Passwords do not match"); return; }
+
+    try {
+      const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+      const user = userCredential.user;
+
+      // First user becomes admin
+      const usersSnapshot = await db.collection('users').get();
+      const role = usersSnapshot.empty ? 'admin' : 'user';
+
+      await db.collection('users').doc(user.uid).set({ email: email, role: role });
+      alert(`Account created for ${email}. Role: ${role}`);
+      toggleSignup(false);
+    } catch (error) {
+      alert(error.message);
+    }
+  }
+
+  async function login() {
+    const email = document.getElementById("email").value;
+    const password = document.getElementById("password").value;
+
+    if (!email || !password) { alert("Fill all fields"); return; }
+
+    try {
+      const userCredential = await auth.signInWithEmailAndPassword(email, password);
+      const user = userCredential.user;
+      const doc = await db.collection('users').doc(user.uid).get();
+      const role = doc.exists ? doc.data().role : 'user';
+
+      if (role === 'admin') {
+        window.location.href = 'admin-interface.html';
+      } else {
+        window.location.href = 'index.html';
+      }
+    } catch (error) {
+      alert(error.message);
+    }
+  }
+</script>
+
+</body>
+</html>
