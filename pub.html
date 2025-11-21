@@ -1,103 +1,153 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pub Details</title>
-
-    <!-- Firebase Compat -->
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-
-    <link rel="stylesheet" href="style.css" />
-    <style>
-        body { font-family: Arial, sans-serif; background:#fafafa; margin:0; padding:20px; }
-        .container { max-width:800px; margin:auto; background:white; padding:20px; border-radius:12px; box-shadow:0 3px 10px rgba(0,0,0,0.15); }
-        .pub-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
-        .pub-name { font-size:2rem; font-weight:bold; }
-        .pub-location { color:#666; font-size:1.1rem; }
-        .section-title { margin-top:25px; font-size:1.4rem; font-weight:bold; border-bottom:2px solid #d55c16; display:inline-block; padding-bottom:4px; }
-        .beer-list li { margin:6px 0; }
-        .back-btn { background:#d55c16; color:white; padding:10px 16px; border:none; border-radius:8px; cursor:pointer; font-size:1rem; }
-        .info-box { margin-top:10px; line-height:1.6; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pub Details - Real Ale Finder</title>
+<style>
+    body { font-family: Arial, sans-serif; background:#f3f3f3; margin:0; padding:20px; }
+    a { text-decoration:none; color:#d55c16; display:inline-block; margin-bottom:20px; }
+    #pubInfo { background:white; padding:20px; border-radius:10px; box-shadow:0 4px 10px rgba(0,0,0,0.1); max-width:600px; margin:auto; }
+    #beerList { background:white; padding:20px; border-radius:10px; box-shadow:0 4px 10px rgba(0,0,0,0.1); max-width:600px; margin:20px auto; list-style:none; }
+    #beerList li { padding:8px 0; border-bottom:1px solid #eee; }
+    h1, h2 { color:#d55c16; margin-top:0; }
+    .add-beer { background:white; padding:20px; border-radius:10px; max-width:400px; margin:20px auto; box-shadow:0 4px 10px rgba(0,0,0,0.1); }
+    .add-beer label { display:block; margin-top:10px; font-weight:bold; }
+    .add-beer input, .add-beer button { width:100%; padding:8px; margin-top:5px; border-radius:6px; border:1px solid #ccc; }
+    .add-beer button { margin-top:15px; background:#d55c16; color:white; border:none; cursor:pointer; }
+    .add-beer button:hover { opacity:0.9; }
+</style>
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 </head>
-
 <body>
-    <div class="container">
-        <button class="back-btn" onclick="history.back()">← Back</button>
 
-        <div class="pub-header">
-            <div>
-                <div class="pub-name" id="pubName">Loading...</div>
-                <div class="pub-location" id="pubLocation"></div>
-            </div>
-        </div>
+<a href="index.html">← Back to Pubs</a>
 
-        <div class="section-title">Current Beers</div>
-        <ul id="beerList" class="beer-list"></ul>
+<div id="pubInfo">
+    <h1 id="pubName">Loading...</h1>
+    <p id="pubLocation"></p>
+    <p id="pubAle"></p>
+    <p id="pubHours"></p>
+</div>
 
-        <div class="section-title">Contact</div>
-        <div class="info-box">
-            <div><strong>Phone:</strong> <span id="pubPhone"></span></div>
-        </div>
+<h2 style="text-align:center;">Beers on Tap</h2>
+<ul id="beerList">
+    <li>Loading beers...</li>
+</ul>
 
-        <div class="section-title">Opening Times</div>
-        <div class="info-box" id="pubHours"></div>
-    </div>
+<div class="add-beer">
+    <h2>Add New Beer</h2>
+    <label for="beerName">Beer Name</label>
+    <input id="beerName" type="text" placeholder="e.g. Doom Bar">
+    
+    <label for="beerAbv">ABV (%)</label>
+    <input id="beerAbv" type="number" step="0.1" placeholder="e.g. 4.0">
 
-    <script>
-        // Firebase config
-        const firebaseConfig = {
-            apiKey: "AIzaSyBU9vNgsgqN7zKvrSHIE87EkD37vVFwqWE",
-            authDomain: "tapped-ale.firebaseapp.com",
-            projectId: "tapped-ale",
-            storageBucket: "tapped-ale.appspot.com",
-            messagingSenderId: "836659581440",
-            appId: "1:836659581440"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
+    <button onclick="addBeer()">Add Beer</button>
+</div>
 
-        // Get Pub ID from URL
-        const params = new URLSearchParams(window.location.search);
-        const pubId = params.get("id");
+<script>
+  // Firebase config
+  const firebaseConfig = {
+    apiKey: "AIzaSyBU9vNgsgqN7zKvrSHIE87EkD37vVFwqWE",
+    authDomain: "tapped-ale.firebaseapp.com",
+    projectId: "tapped-ale",
+    storageBucket: "tapped-ale.appspot.com",
+    messagingSenderId: "836659581440",
+    appId: "1:836659581440"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
 
-        async function loadPub() {
-            if (!pubId) return;
-            const doc = await db.collection("pubs").doc(pubId).get();
-            if (!doc.exists) return;
+  // Get pub ID from URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const pubId = urlParams.get('id');
 
-            const data = doc.data();
+  if (!pubId) {
+      document.getElementById("pubName").innerText = "Pub not found.";
+      document.getElementById("beerList").innerHTML = "";
+  } else {
+      loadPub(pubId);
+  }
 
-            document.getElementById("pubName").textContent = data.name;
-            document.getElementById("pubLocation").textContent = data.location;
+  async function loadPub(pubId) {
+      try {
+          const pubDoc = await db.collection("pubs").doc(pubId).get();
 
-            // Beers
-            const beers = document.getElementById("beerList");
-            if (Array.isArray(data.beers)) {
-                data.beers.forEach(b => {
-                    const li = document.createElement("li");
-                    li.textContent = b;
-                    beers.appendChild(li);
-                });
-            } else {
-                beers.innerHTML = "<li>No beers listed</li>";
-            }
+          if (!pubDoc.exists) {
+              document.getElementById("pubName").innerText = "Pub not found.";
+              document.getElementById("beerList").innerHTML = "";
+              return;
+          }
 
-            // Phone
-            document.getElementById("pubPhone").textContent = data.phone || "Not available";
+          const data = pubDoc.data();
+          document.getElementById("pubName").innerText = data.name || "Unnamed Pub";
+          document.getElementById("pubLocation").innerText = data.location ? "Location: " + data.location : "";
+          document.getElementById("pubAle").innerText = data.ale ? "Ale on tap: " + data.ale : "";
+          document.getElementById("pubHours").innerText = data.openingHours ? "Opening Hours: " + data.openingHours : "";
 
-            // Opening hours
-            const pubHours = document.getElementById("pubHours");
-            if (data.openingTimes) {
-                pubHours.innerHTML = data.openingTimes.replace(/\n/g, "<br>");
-            } else {
-                pubHours.textContent = "Not provided";
-            }
-        }
+          await loadBeers(pubId);
 
-        loadPub();
-    </script>
+      } catch (err) {
+          console.error("Error loading pub or beers:", err);
+          document.getElementById("pubName").innerText = "Error loading pub.";
+          document.getElementById("beerList").innerHTML = "<li>Could not load beers</li>";
+      }
+  }
+
+  async function loadBeers(pubId) {
+      const beerList = document.getElementById("beerList");
+      try {
+          const snapshot = await db.collection("pubs").doc(pubId).collection("beers").get();
+
+          if (snapshot.empty) {
+              beerList.innerHTML = "<li>No beers listed yet</li>";
+              return;
+          }
+
+          beerList.innerHTML = ""; // clear placeholder
+          snapshot.forEach(doc => {
+              const beer = doc.data();
+              const li = document.createElement("li");
+              li.innerText = `${beer.name || 'Unnamed Beer'} - ${beer.abv || '?'}% ABV`;
+              beerList.appendChild(li);
+          });
+      } catch (err) {
+          console.error("Error loading beers:", err);
+          beerList.innerHTML = "<li>Could not load beers</li>";
+      }
+  }
+
+  async function addBeer() {
+      const name = document.getElementById("beerName").value.trim();
+      const abv = parseFloat(document.getElementById("beerAbv").value);
+
+      if (!name || isNaN(abv)) {
+          alert("Please enter a beer name and a valid ABV.");
+          return;
+      }
+
+      try {
+          await db.collection("pubs").doc(pubId).collection("beers").add({
+              name,
+              abv,
+              added: firebase.firestore.FieldValue.serverTimestamp()
+          });
+
+          alert(`Beer "${name}" added!`);
+          document.getElementById("beerName").value = "";
+          document.getElementById("beerAbv").value = "";
+
+          await loadBeers(pubId);
+
+      } catch (err) {
+          console.error("Error adding beer:", err);
+          alert("Could not add beer. Check console for details.");
+      }
+  }
+</script>
+
 </body>
 </html>

@@ -132,9 +132,10 @@ const userIcon = L.icon({
 function createPubCard(pub) {
     const div = document.createElement("div");
     div.className = "pub-row";
+    div.dataset.id = pub.id;            // ⭐ Store the Firestore ID
     div.dataset.coords = `${pub.lat},${pub.lng}`;
 
-    // Make the row clickable → go to pub details page
+    // On click → open pub details page
     div.addEventListener("click", () => {
         window.location.href = `pub.html?id=${pub.id}`;
     });
@@ -162,6 +163,7 @@ function createPubCard(pub) {
         snapshot.forEach(doc => {
             const data = doc.data();
             const card = createPubCard({
+                id: doc.id,
                 name: data.name,
                 location: data.location,
                 ale: data.ale,
@@ -175,6 +177,7 @@ function createPubCard(pub) {
                 .addTo(map);
 
             markers.push({
+                id: doc.id,
                 marker,
                 card,
                 coords: [data.lat, data.lng],
